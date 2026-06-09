@@ -31,18 +31,16 @@ Data Augmentation/
   augment_core.py        # Core engine: AugSource, run_augmentation
   augment.py             # CLI: --aug white|pitch_up|pitch_down|lofi|file:<name>:<path>
   augment_gui.py         # Tkinter GUI for running augmentation
-  augment_gui_preview.py # Static layout preview (no backend)
 
 Models/
   embed.py               # Single CLAP embedding script (--music-model flag for specialist ckpt)
-  requirements.txt
 
 Shazam/
   src/                   # DSP pipeline: spectrogram, peak finding, time-coherence matching
   evaluation/
     build_gtzan_db.py    # Index full GTZAN tracks into fingerprints_gtzan.db
     evaluate_shazam.py   # Benchmark against augmented dataset (resume-safe CSV output)
-    analyze_results.ipynb
+    results/plots/       # Pre-generated Shazam result plots
 
 Embedding Evaluations/
   eval_utils.py                      # Shared utilities for both evaluation scripts
@@ -50,11 +48,14 @@ Embedding Evaluations/
   evaluate_gtzan_exact_retrieval.py  # Exact-song retrieval (cosine similarity search)
   summarize_gtzan_data.py            # Dataset overview plots
   results/
-    genre_classification/
-    exact_song_retrieval/
-    data_overview/
+    genre_classification/            # Pre-generated CLAP genre classification plots
+    exact_song_retrieval/            # Pre-generated CLAP retrieval plots
+    data_overview/                   # Dataset summary plots
 
+evaluate.py              # Convenience dispatcher: python evaluate.py <summary|genre|retrieval>
+analysis.ipynb           # Unified results notebook with discussion (renders on GitHub)
 notes.md                 # Technical notes on evaluation design and key findings
+requirements.txt         # All dependencies
 ```
 
 ## Key Findings
@@ -127,7 +128,7 @@ graph TD
 ```bash
 git clone https://github.com/barneypinkerton/Shazam-CLAP-Embedding-Analysis.git
 cd Shazam-CLAP-Embedding-Analysis
-pip install -r Models/requirements.txt
+pip install -r requirements.txt
 ```
 
 ### Data Augmentation
