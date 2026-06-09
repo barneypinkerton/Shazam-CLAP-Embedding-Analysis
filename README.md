@@ -1,129 +1,205 @@
 # Evaluating Shazam-Style Fingerprinting and Audio Embedding Retrieval Under Challenging Audio Conditions
 
-This project investigates the robustness of two fundamentally different audio retrieval methodologies: **Deterministic Fingerprinting** (Shazam-style) and **Neural Audio Embeddings** (Deep Learning-based). 
+This project investigates the robustness of two fundamentally different audio retrieval methodologies: **Deterministic Fingerprinting** (Shazam-style) and **Neural Audio Embeddings** (LAION-CLAP).
 
 ---
 
-## 🎯 Idea and Goals
-The core objective is to evaluate how retrieval methods perform when subjected to real-world audio degradations such as high background noise, volume fluctuations, and spectral distortions. 
+## Idea and Goals
 
-While Shazam's landmark-based hashing was once the gold standard for music identification, modern deep learning models (e.g., CLAP, MusicLM) offer semantic embeddings that capture higher-level musical features. However, most embedding models are trained on clean datasets, whereas Shazam was specifically engineered to survive the "noisy bar" scenario. This repository implements both approaches and benchmarks them against a common dataset under various stress conditions to determine their respective breaking points and failure modes.
+The core objective is to evaluate how retrieval methods perform when subjected to real-world audio degradations — background noise, pitch distortion, and spectral filtering.
 
-## 📊 Data Description
-The project utilizes the **GTZAN Dataset**, a standard benchmark for music genre classification consisting of 1,000 audio tracks (10 genres, 100 files each, each 30 seconds long). 
+While Shazam's landmark-based hashing was once the gold standard for music identification, modern deep learning models offer semantic embeddings that capture higher-level musical features. However, most embedding models are trained on clean datasets, whereas Shazam was specifically engineered to survive the "noisy bar" scenario. This repository implements both approaches and benchmarks them against a common dataset under various stress conditions to determine their respective breaking points and failure modes.
 
-To simulate real-world conditions, we generated an augmented dataset (8,991 files) by mixing the original tracks with three types of noise at three different Signal-to-Noise Ratios (SNR):
-*   **Noise Types**: White Noise, Crowd Noise, Street Noise.
-*   **SNR Levels**: 0dB (Equal power), 10dB (Cafe environment), and 20dB (Quiet room).
-*   **Transformations**: Beyond additive noise, the framework supports volume scaling, pitch shifting, time stretching, and low-pass filtering.
+## Data Description
 
-## 🏗 Code Structure and Organization
-The repository is organized into specialized modules for each stage of the pipeline:
+The project uses the **GTZAN Dataset** — 1,000 audio tracks (10 genres, 100 files each, 30 seconds each).
 
-*   **`Data Augmentation/`**: Contains the `augment.py` CLI and `augment_gui.py` tools used to create the noisy dataset versions.
-*   **`Shazam/`**: The core implementation of the deterministic fingerprinting engine.
-    *   `src/`: Contains the DSP pipeline for spectrogram generation, peak finding (Constellation Maps), and time-coherence matching.
-    *   `evaluation/`: Scripts (`evaluate_shazam.py`) for automated benchmarking against the augmented dataset.
-    *   `results/`: Storage for evaluation metrics and CSV logs (`shazam_eval.csv`).
-*   **`Models/`**: Scripts for extracting and searching neural embeddings using LAION-CLAP (general and music-specific checkpoints).
-*   **`notes.md`**: Technical logs regarding snippet randomization, bias mitigation, and implementation details.
+To simulate real-world conditions, an augmented dataset (17,982 files) was generated across two degradation categories:
 
-## 📈 Results and Key Findings
-The evaluation framework benchmarks the systems using the following metrics:
-*   **Top-1 Accuracy**: Success rate of the correct song being the highest-ranked result.
-*   **Mean Reciprocal Rank (MRR)**: Measures the quality of the ranking for the ground truth.
-*   **Noise Tolerance Threshold**: The lower-bound SNR at which each method maintains >80% accuracy.
+**Additive Noise (8,991 files)** — original tracks mixed with three noise types at three SNR levels:
+- Noise types: White Noise, Crowd Noise, Street Noise
+- SNR levels: 0 dB (equal power), 10 dB (café environment), 20 dB (quiet room)
 
-### Key Observations:
-*   **Deterministic Resilience**: The Shazam implementation demonstrates high robustness in "additive noise" scenarios due to its time-coherence scoring, which can recover signals even when the majority of fingerprint peaks are lost to noise.
-*   **Semantic Robustness**: Neural embeddings (CLAP) provide higher flexibility for semantic similarity but can be more sensitive to specific spectral distortions if those distortions were not present in the training distribution.
-*   **Pipeline Performance**: The evaluation identifies that 10-second snippets are sufficient for high-confidence identification in most 20dB and 10dB conditions, while 0dB poses a significant challenge for both methodologies.
+**Musical Transforms (8,991 files)** — signal-level distortions without additive noise:
+- Pitch Shift: ±1, ±2, ±3 semitones (up and down evaluated separately)
+- Lo-Fi Bandpass Filter: three severity levels progressively narrowing the audible frequency range — Level 1 (300–8000 Hz), Level 2 (400–6000 Hz), Level 3 (500–4000 Hz)
 
-## 👥 Group Roles
-1.  **Barney Pinkerton**: Data Augmentation and MIR Data Scientist
-2.  **Robert Tylman**: Data Augmentation and Shazam Implementation
-3.  **Katelyn Vieni**: CLAP Audio Embedding Engineer
-4.  **Jonathan David**: CLAP Audio Embedding Engineer
-5.  **Drew Atz**: Evaluation
+## Code Structure
 
----
+```
+Data Augmentation/
+  augment_core.py        # Core engine: AugSource, run_augmentation
+  augment.py             # CLI: --aug white|pitch_up|pitch_down|lofi|file:<name>:<path>
+  augment_gui.py         # Tkinter GUI for running augmentation
+  augment_gui_preview.py # Static layout preview (no backend)
 
-## 🏗 System Architecture
+Models/
+  embed.py               # Single CLAP embedding script (--music-model flag for specialist ckpt)
+  requirements.txt
+
+Shazam/
+  src/                   # DSP pipeline: spectrogram, peak finding, time-coherence matching
+  evaluation/
+    build_gtzan_db.py    # Index full GTZAN tracks into fingerprints_gtzan.db
+    evaluate_shazam.py   # Benchmark against augmented dataset (resume-safe CSV output)
+    analyze_results.ipynb
+
+Embedding Evaluations/
+  eval_utils.py                      # Shared utilities for both evaluation scripts
+  evaluate_gtzan_retrieval.py        # Genre classification (train on clean, test on augmented)
+  evaluate_gtzan_exact_retrieval.py  # Exact-song retrieval (cosine similarity search)
+  summarize_gtzan_data.py            # Dataset overview plots
+  results/
+    genre_classification/
+    exact_song_retrieval/
+    data_overview/
+
+notes.md                 # Technical notes on evaluation design and key findings
+```
+
+## Key Findings
+
+**Shazam**: ~91% on additive noise at all SNR levels. Drops to 0% on pitch-shift and 6–8% on lo-fi — the bandpass removes the high-frequency peaks the hashes depend on; pitch shifting destroys the exact frequency-time coordinates entirely.
+
+**CLAP General**: Degrades gracefully. Exact retrieval: 61–77% Top-1 at 20 dB SNR, 22–33% on pitch shift, 28–60% on lo-fi. Genre classification: 86–92% at 20 dB SNR, 52–62% on pitch shift, 64–80% on lo-fi. The only system with non-zero pitch-shift robustness.
+
+**CLAP Music**: Collapses on transforms. Exact retrieval ~0%, genre ~10% (random chance). Cosine similarity falls from ~0.99 on clean audio to ~0.048 on pitch-shifted audio. Fine-tuning on music increased sensitivity to exact tonal features, which is catastrophic when those features are altered.
+
+**Headline**: Shazam and CLAP Music share the same fatal weakness — exact acoustic matching. CLAP General, a generalist model not designed for music retrieval, is the most transform-robust system. Broader training > specialist fine-tuning for robustness to musical transforms.
+
+## System Architecture
 
 ```mermaid
 graph TD
     subgraph "Phase 1: Database Indexing (Clean Reference)"
-        GTZAN_Ref[GTZAN Original Tracks<br/>30s Clean]
-        
-        GTZAN_Ref --> Shazam_Idx[Shazam Fingerprinting<br/>Spectrogram + Peaks]
-        Shazam_Idx --> HashDB[(fingerprints.db)]
-        
+        GTZAN_Ref[GTZAN Original Tracks\n1000 x 30s Clean]
+        GTZAN_Ref --> Shazam_Idx[Shazam Fingerprinting\nSpectrogram + Peaks]
+        Shazam_Idx --> HashDB[(fingerprints_gtzan.db)]
         GTZAN_Ref --> CLAP_Gen_Idx[LAION-CLAP General]
         GTZAN_Ref --> CLAP_Mus_Idx[LAION-CLAP Music]
-        CLAP_Gen_Idx --> EmbedStore[(Embedding Manifest<br/>.npy files)]
+        CLAP_Gen_Idx --> EmbedStore[(Embedding Manifests\n.npy files)]
         CLAP_Mus_Idx --> EmbedStore
     end
 
     subgraph "Phase 2: Data Augmentation (Test Queries)"
         GTZAN_Query[GTZAN Original Tracks]
-        GTZAN_Query --> AugEngine[Augmentation Engine]
-        
-        Noise[(Noise: White, Crowd, Street)] --> AugEngine
-        SNR[(SNR: 0dB, 10dB, 20dB)] --> AugEngine
-        
-        AugEngine --> NoisyAudio[Augmented Audio Set<br/>8,991 files]
-        NoisyAudio --> Snippets[Random 10s Snippets]
+        GTZAN_Query --> AugEngine[Augmentation Engine\naugment_core.py]
+        Noise[(Noise: White, Crowd, Street\nSNR: 0/10/20 dB)] --> AugEngine
+        Transforms[(Pitch Shift ±1/2/3 st\nLo-Fi Filter L1/L2/L3)] --> AugEngine
+        AugEngine --> AugAudio[Augmented Audio Set\n17,982 files]
+        AugAudio --> Snippets[Random 10s Snippets\nShazam queries only]
     end
 
-    subgraph "Phase 3: Retrieval & Benchmarking"
-        Snippets --> ShazamMatch[Shazam Time-Coherence<br/>Matching]
-        Snippets --> VectorSearch[Cosine Similarity<br/>Search]
-        
+    subgraph "Phase 3: Retrieval and Benchmarking"
+        Snippets --> ShazamMatch[Shazam Time-Coherence\nMatching]
+        AugAudio --> CLAPEmbed[CLAP Embedding\nembed.py]
         HashDB --> ShazamMatch
-        EmbedStore --> VectorSearch
-        
-        ShazamMatch --> ResA[Retrieval Results]
-        VectorSearch --> ResB[Retrieval Results]
+        EmbedStore --> VectorSearch[Cosine Similarity\nSearch]
+        CLAPEmbed --> VectorSearch
+        ShazamMatch --> ResA[Shazam Results]
+        VectorSearch --> ResB[CLAP Results]
     end
 
     subgraph "Phase 4: Evaluation"
-        ResA --> Metrics[Accuracy / MRR / SNR Threshold]
+        ResA --> Metrics[Accuracy / Top-5 / Genre]
         ResB --> Metrics
-        Metrics --> Reports[shazam_eval.csv + Comparison]
+        Metrics --> Reports[CSV + Plots]
     end
 
-    %% Styling
     style GTZAN_Ref fill:#e1f5fe,stroke:#01579b
     style HashDB fill:#fff9c4,stroke:#fbc02d
     style EmbedStore fill:#fff9c4,stroke:#fbc02d
-    style NoisyAudio fill:#ffebee,stroke:#c62828
+    style AugAudio fill:#ffebee,stroke:#c62828
     style Metrics fill:#f1f8e9,stroke:#33691e
 ```
 
-
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
-*   Python 3.9+
-*   `librosa`, `scipy`, `numpy` (DSP)
-*   `laion_clap`,`torch`, `transformers` (Embeddings)
+
+- Python 3.10+
+- `librosa`, `scipy`, `numpy`, `soundfile` (DSP / augmentation)
+- `laion_clap`, `torch`, `transformers` (embeddings)
+- `scikit-learn`, `pandas`, `matplotlib` (evaluation)
 
 ### Installation
+
 ```bash
-git clone https://github.com/RobertTylman/DLFMFinalProject.git
-cd DLFMFinalProject
-pip install -r requirements.txt
+git clone https://github.com/barneypinkerton/Shazam-CLAP-Embedding-Analysis.git
+cd Shazam-CLAP-Embedding-Analysis
+pip install -r Models/requirements.txt
 ```
 
-### Running Shazam Evaluation
+### Data Augmentation
+
 ```bash
-# Build the reference DB
-python3 Shazam/evaluation/build_gtzan_db.py --originals-root "/path/to/GTZAN/genres_original"
+# CLI — generate all augmentation types
+python "Data Augmentation/augment.py" \
+  --input  /path/to/genres_original \
+  --output /path/to/genres_augmented \
+  --aug white --aug pitch_up --aug pitch_down --aug lofi \
+  --aug file:crowd_noise:"Data Augmentation/crowd noise.wav" \
+  --aug file:street_noise:"Data Augmentation/street noise.wav" \
+  --levels 20 10 0
+
+# GUI
+python "Data Augmentation/augment_gui.py"
+```
+
+### CLAP Embedding
+
+```bash
+# General-purpose checkpoint
+python Models/embed.py \
+  --input  /path/to/Data \
+  --output /path/to/Embeddings/CLAP_general \
+  --checkpoint /path/to/630k-audioset-best.pt
+
+# Music specialist checkpoint
+python Models/embed.py \
+  --input  /path/to/Data \
+  --output /path/to/Embeddings/CLAP_music \
+  --checkpoint /path/to/music_audioset_epoch_15_esc_90.14.pt \
+  --music-model
+```
+
+### Shazam Evaluation
+
+```bash
+# Build the reference DB (one time)
+python Shazam/evaluation/build_gtzan_db.py \
+  --originals-root /path/to/genres_original
 
 # Run the benchmark
-python3 Shazam/evaluation/evaluate_shazam.py
+python Shazam/evaluation/evaluate_shazam.py \
+  --augmented-root /path/to/genres_augmented
 ```
 
-## 📚 References
-*   Wang, A. (2003). *An Industrial-Strength Audio Search Algorithm*.
-*   Elizalde, B., et al. (2023). *CLAP: Learning Audio Concepts From Natural Language Supervision*.
+### CLAP Embedding Evaluation
+
+```bash
+# Dataset overview
+python "Embedding Evaluations/summarize_gtzan_data.py" \
+  --data-root /path/to/Embeddings/CLAP_general
+
+# Genre classification
+python "Embedding Evaluations/evaluate_gtzan_retrieval.py" \
+  --embedding-root /path/to/Embeddings/CLAP_general \
+  --embedding-root /path/to/Embeddings/CLAP_music \
+  --model-label "CLAP General" \
+  --model-label "CLAP Music"
+
+# Exact-song retrieval
+python "Embedding Evaluations/evaluate_gtzan_exact_retrieval.py" \
+  --embedding-root /path/to/Embeddings/CLAP_general \
+  --embedding-root /path/to/Embeddings/CLAP_music \
+  --model-label "CLAP General" \
+  --model-label "CLAP Music"
+
+# Add --write-csv to any evaluation script to also export summary tables
+```
+
+## References
+
+- Wang, A. (2003). *An Industrial-Strength Audio Search Algorithm*. ISMIR.
+- Elizalde, B., et al. (2023). *CLAP: Learning Audio Concepts From Natural Language Supervision*. ICASSP.

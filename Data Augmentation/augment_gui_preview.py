@@ -9,14 +9,13 @@ class AugmentGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Audio Data Augmentation Tool")
-        self.geometry("720x700")
-        self.minsize(650, 600)
+        self.geometry("720x780")
+        self.minsize(650, 680)
         self.configure(bg="#1e1e2e")
 
         style = ttk.Style(self)
         style.theme_use("clam")
 
-        # Colors
         bg = "#1e1e2e"
         fg = "#cdd6f4"
         accent = "#89b4fa"
@@ -28,7 +27,6 @@ class AugmentGUI(tk.Tk):
         style.configure(".", background=bg, foreground=fg, fieldbackground=surface,
                          borderwidth=0, font=("Helvetica", 12))
         style.configure("TLabel", background=bg, foreground=fg, font=("Helvetica", 12))
-        style.configure("Header.TLabel", background=bg, foreground=fg, font=("Helvetica", 14, "bold"))
         style.configure("Sub.TLabel", background=bg, foreground=subtext, font=("Helvetica", 10))
         style.configure("TEntry", fieldbackground=surface, foreground=fg, insertcolor=fg)
         style.configure("TButton", background=surface, foreground=fg, padding=(12, 6),
@@ -62,67 +60,85 @@ class AugmentGUI(tk.Tk):
 
         dir_frame.columnconfigure(1, weight=1)
 
-        # === Noise Sources ===
-        noise_frame = ttk.LabelFrame(self, text="  Noise Sources  ", padding=10)
-        noise_frame.pack(fill="both", expand=True, padx=16, pady=8)
+        # === Augmentation Sources ===
+        aug_frame = ttk.LabelFrame(self, text="  Augmentation Sources  ", padding=10)
+        aug_frame.pack(fill="both", expand=True, padx=16, pady=8)
 
-        # Noise list
-        self.noise_list = tk.Listbox(noise_frame, bg=surface, fg=fg, selectbackground=accent,
-                                      selectforeground=bg, font=("Helvetica", 11), height=5,
-                                      borderwidth=0, highlightthickness=1, highlightcolor=accent)
-        self.noise_list.pack(fill="both", expand=True, padx=4, pady=4)
+        self.aug_list = tk.Listbox(aug_frame, bg=surface, fg=fg, selectbackground=accent,
+                                    selectforeground=bg, font=("Helvetica", 11), height=5,
+                                    borderwidth=0, highlightthickness=1, highlightcolor=accent)
+        self.aug_list.pack(fill="both", expand=True, padx=4, pady=4)
 
         # Pre-populate with demo entries
-        self.noise_list.insert(tk.END, "  White Noise  (generated)")
-        self.noise_list.insert(tk.END, "  Crowd Noise  — crowd noise.wav")
-        self.noise_list.insert(tk.END, "  Street Noise — street noise.wav")
+        for entry in [
+            "  White Noise  (generated)",
+            "  Crowd Noise  — crowd noise.wav",
+            "  Street Noise — street noise.wav",
+            "  Pitch Shift Up",
+            "  Pitch Shift Down",
+            "  Lo-Fi Filter",
+        ]:
+            self.aug_list.insert(tk.END, entry)
 
-        btn_row = ttk.Frame(noise_frame)
+        btn_row = ttk.Frame(aug_frame)
         btn_row.pack(fill="x", pady=(6, 0))
-        ttk.Button(btn_row, text="+ White Noise", command=self._add_white).pack(side="left", padx=4)
-        ttk.Button(btn_row, text="+ Noise File...", command=self._add_file_noise).pack(side="left", padx=4)
+        ttk.Button(btn_row, text="+ White Noise", command=self._noop).pack(side="left", padx=4)
+        ttk.Button(btn_row, text="+ Noise File...", command=self._noop).pack(side="left", padx=4)
+        ttk.Button(btn_row, text="+ Pitch Up", command=self._noop).pack(side="left", padx=4)
+        ttk.Button(btn_row, text="+ Pitch Down", command=self._noop).pack(side="left", padx=4)
+        ttk.Button(btn_row, text="+ Lo-Fi", command=self._noop).pack(side="left", padx=4)
         ttk.Button(btn_row, text="Remove Selected", style="Remove.TButton",
-                    command=self._remove_noise).pack(side="right", padx=4)
+                    command=self._noop).pack(side="right", padx=4)
 
         # === Parameters ===
         param_frame = ttk.LabelFrame(self, text="  Parameters  ", padding=10)
         param_frame.pack(fill="x", padx=16, pady=8)
 
-        ttk.Label(param_frame, text="SNR Levels (dB)").grid(row=0, column=0, sticky="w", **pad)
-        self.snr_var = tk.StringVar(value="20, 10, 0")
-        ttk.Entry(param_frame, textvariable=self.snr_var, width=24).grid(row=0, column=1, sticky="w", **pad)
-        ttk.Label(param_frame, text="comma-separated", style="Sub.TLabel").grid(row=0, column=2, sticky="w", **pad)
+        levels_row = ttk.Frame(param_frame)
+        levels_row.pack(fill="x", pady=2)
+        ttk.Label(levels_row, text="Levels", width=18, anchor="w").pack(side="left")
+        self.levels_var = tk.StringVar(value="20, 10, 0")
+        ttk.Entry(levels_row, textvariable=self.levels_var, width=20).pack(side="left", padx=(4, 8))
+        ttk.Label(levels_row, text="comma-separated", style="Sub.TLabel").pack(side="left")
 
-        ttk.Label(param_frame, text="Snippet Duration (s)").grid(row=1, column=0, sticky="w", **pad)
-        self.snippet_var = tk.StringVar(value="30")
-        ttk.Entry(param_frame, textvariable=self.snippet_var, width=8).grid(row=1, column=1, sticky="w", **pad)
-        ttk.Label(param_frame, text="for file-based noise", style="Sub.TLabel").grid(row=1, column=2, sticky="w", **pad)
+        levels_info = (
+            "Noise: SNR in dB (20 = quiet, 10 = noticeable, 0 = equal power)  |  "
+            "Pitch: semitones (1, 2, 3)  |  Lo-Fi: severity 1/2/3"
+        )
+        ttk.Label(param_frame, text=levels_info, style="Sub.TLabel").pack(anchor="w", padx=(2, 0), pady=(0, 6))
 
-        ttk.Label(param_frame, text="Random Seed").grid(row=2, column=0, sticky="w", **pad)
-        self.seed_var = tk.StringVar(value="42")
-        ttk.Entry(param_frame, textvariable=self.seed_var, width=8).grid(row=2, column=1, sticky="w", **pad)
-        ttk.Label(param_frame, text="leave blank for random", style="Sub.TLabel").grid(row=2, column=2, sticky="w", **pad)
+        snip_row = ttk.Frame(param_frame)
+        snip_row.pack(fill="x", pady=2)
+        ttk.Label(snip_row, text="Snippet Duration (s)", width=18, anchor="w").pack(side="left")
+        ttk.Entry(snip_row, textvariable=tk.StringVar(value="30"), width=8).pack(side="left", padx=(4, 8))
+        ttk.Label(snip_row, text="for file-based noise", style="Sub.TLabel").pack(side="left")
 
-        ttk.Label(param_frame, text="Workers").grid(row=3, column=0, sticky="w", **pad)
-        self.workers_var = tk.StringVar(value="4")
-        ttk.Entry(param_frame, textvariable=self.workers_var, width=8).grid(row=3, column=1, sticky="w", **pad)
+        seed_row = ttk.Frame(param_frame)
+        seed_row.pack(fill="x", pady=2)
+        ttk.Label(seed_row, text="Random Seed", width=18, anchor="w").pack(side="left")
+        ttk.Entry(seed_row, textvariable=tk.StringVar(value="42"), width=8).pack(side="left", padx=(4, 8))
+        ttk.Label(seed_row, text="leave blank for random", style="Sub.TLabel").pack(side="left")
+
+        workers_row = ttk.Frame(param_frame)
+        workers_row.pack(fill="x", pady=2)
+        ttk.Label(workers_row, text="Workers", width=18, anchor="w").pack(side="left")
+        ttk.Entry(workers_row, textvariable=tk.StringVar(value="4"), width=8).pack(side="left", padx=(4, 8))
+        ttk.Label(workers_row, text="parallel CPU cores", style="Sub.TLabel").pack(side="left")
 
         # === Progress ===
         progress_frame = ttk.LabelFrame(self, text="  Progress  ", padding=10)
         progress_frame.pack(fill="x", padx=16, pady=8)
 
-        self.status_var = tk.StringVar(value="Ready")
-        ttk.Label(progress_frame, textvariable=self.status_var, style="Sub.TLabel").pack(anchor="w")
+        ttk.Label(progress_frame, text="450/9000 — blues.00045.wav", style="Sub.TLabel").pack(anchor="w")
         self.progress = ttk.Progressbar(progress_frame, style="green.Horizontal.TProgressbar",
                                          length=400, mode="determinate", value=35)
         self.progress.pack(fill="x", pady=(4, 0))
 
-        # Log
         self.log = tk.Text(progress_frame, bg=surface, fg=subtext, font=("Menlo", 10),
                             height=4, borderwidth=0, highlightthickness=0, state="disabled")
         self.log.pack(fill="x", pady=(8, 0))
-        self._log("Loaded 3 noise sources, 3 SNR levels")
-        self._log("Estimated output: 9,000 files")
+        self._log("Sources: white_noise, crowd_noise, street_noise, pitch_shift_up, pitch_shift_down, lofi")
+        self._log("Levels: [20.0, 10.0, 0.0]")
 
         # === Controls ===
         ctrl_frame = ttk.Frame(self)
@@ -135,20 +151,8 @@ class AugmentGUI(tk.Tk):
         if path:
             var.set(path)
 
-    def _add_white(self):
-        self.noise_list.insert(tk.END, "  White Noise  (generated)")
-
-    def _add_file_noise(self):
-        path = filedialog.askopenfilename(filetypes=[("WAV files", "*.wav"), ("All files", "*.*")])
-        if path:
-            import os
-            name = os.path.splitext(os.path.basename(path))[0].replace(" ", "_")
-            self.noise_list.insert(tk.END, f"  {name} — {os.path.basename(path)}")
-
-    def _remove_noise(self):
-        sel = self.noise_list.curselection()
-        if sel:
-            self.noise_list.delete(sel[0])
+    def _noop(self):
+        pass
 
     def _log(self, msg):
         self.log.configure(state="normal")

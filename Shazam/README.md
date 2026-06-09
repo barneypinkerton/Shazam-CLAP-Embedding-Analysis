@@ -45,7 +45,7 @@ flowchart TD
 
 ## How It Works
 
-The core of the algorithm is based on creating robust identifiers for audio clips that can survive noise, distortion, and compression.
+The core of the algorithm is based on creating robust identifiers for audio clips that can survive noise, distortion, and compression. Note that musical transforms such as pitch shifting alter the fundamental frequency-time coordinates that fingerprints depend on, and defeat the algorithm even at small magnitudes (e.g. ±1 semitone). Lo-fi bandpass filtering similarly removes the high-frequency peaks the hashes rely on.
 
 1. **Ingestion & Spectrogram Generation:**
    Audio files act as raw inputs, which are mixed down to a neutral mono-signal. Background interference is purged via a tight 20Hz-5kHz mathematical bandpass filter, before safely decimating the sample stream down to an optimized 11,025Hz. An overlapping segmented frame pass computes a localized Hamming-Windowed Fast Fourier Transform (FFT) turning the waveform into a dense 2D magnitude spectrogram array.

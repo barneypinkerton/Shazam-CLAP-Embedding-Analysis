@@ -5,20 +5,20 @@ import os
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from augment_core import NoiseSource, run_augmentation
+from augment_core import AugSource, run_augmentation
 
 
 class AugmentGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Audio Data Augmentation Tool")
-        self.geometry("720x700")
-        self.minsize(650, 600)
+        self.geometry("720x780")
+        self.minsize(650, 680)
         self.configure(bg="#1e1e2e")
 
         self._cancelled = False
         self._running = False
-        self._noise_entries = []  # list of (display_str, NoiseSource)
+        self._aug_entries = []  # list of (display_str, AugSource)
 
         self._setup_styles()
         self._build_ui()
@@ -28,11 +28,11 @@ class AugmentGUI(tk.Tk):
         crowd_path = os.path.join(script_dir, "crowd noise.wav")
         street_path = os.path.join(script_dir, "street noise.wav")
 
-        self._add_noise_entry(NoiseSource(name="white_noise", kind="white"))
+        self._add_entry(AugSource(name="white_noise", kind="white"))
         if os.path.exists(crowd_path):
-            self._add_noise_entry(NoiseSource(name="crowd_noise", kind="file", path=crowd_path))
+            self._add_entry(AugSource(name="crowd_noise", kind="file", path=crowd_path))
         if os.path.exists(street_path):
-            self._add_noise_entry(NoiseSource(name="street_noise", kind="file", path=street_path))
+            self._add_entry(AugSource(name="street_noise", kind="file", path=street_path))
 
     def _setup_styles(self):
         style = ttk.Style(self)
@@ -88,43 +88,43 @@ class AugmentGUI(tk.Tk):
 
         dir_frame.columnconfigure(1, weight=1)
 
-        # === Noise Sources ===
-        noise_frame = ttk.LabelFrame(self, text="  Noise Sources  ", padding=10)
-        noise_frame.pack(fill="both", expand=True, padx=16, pady=8)
+        # === Augmentation Sources ===
+        aug_frame = ttk.LabelFrame(self, text="  Augmentation Sources  ", padding=10)
+        aug_frame.pack(fill="both", expand=True, padx=16, pady=8)
 
-        self.noise_list = tk.Listbox(noise_frame, bg=c["surface"], fg=c["fg"],
-                                      selectbackground=c["accent"], selectforeground=c["bg"],
-                                      font=("Helvetica", 11), height=5,
-                                      borderwidth=0, highlightthickness=1, highlightcolor=c["accent"])
-        self.noise_list.pack(fill="both", expand=True, padx=4, pady=4)
+        self.aug_list = tk.Listbox(aug_frame, bg=c["surface"], fg=c["fg"],
+                                    selectbackground=c["accent"], selectforeground=c["bg"],
+                                    font=("Helvetica", 11), height=5,
+                                    borderwidth=0, highlightthickness=1, highlightcolor=c["accent"])
+        self.aug_list.pack(fill="both", expand=True, padx=4, pady=4)
 
-        btn_row = ttk.Frame(noise_frame)
+        btn_row = ttk.Frame(aug_frame)
         btn_row.pack(fill="x", pady=(6, 0))
         ttk.Button(btn_row, text="+ White Noise", command=self._add_white).pack(side="left", padx=4)
         ttk.Button(btn_row, text="+ Noise File...", command=self._add_file_noise).pack(side="left", padx=4)
+        ttk.Button(btn_row, text="+ Pitch Up", command=self._add_pitch_up).pack(side="left", padx=4)
+        ttk.Button(btn_row, text="+ Pitch Down", command=self._add_pitch_down).pack(side="left", padx=4)
+        ttk.Button(btn_row, text="+ Lo-Fi", command=self._add_lofi).pack(side="left", padx=4)
         ttk.Button(btn_row, text="Remove Selected", style="Remove.TButton",
-                    command=self._remove_noise).pack(side="right", padx=4)
+                    command=self._remove_aug).pack(side="right", padx=4)
 
         # === Parameters ===
         param_frame = ttk.LabelFrame(self, text="  Parameters  ", padding=10)
         param_frame.pack(fill="x", padx=16, pady=8)
 
-        # Each parameter is a horizontal row: label immediately next to its entry + hint
-        # SNR
-        snr_row = ttk.Frame(param_frame)
-        snr_row.pack(fill="x", pady=2)
-        ttk.Label(snr_row, text="SNR Levels (dB)", width=18, anchor="w").pack(side="left")
-        self.snr_var = tk.StringVar(value="20, 10, 0")
-        ttk.Entry(snr_row, textvariable=self.snr_var, width=20).pack(side="left", padx=(4, 8))
-        ttk.Label(snr_row, text="comma-separated", style="Sub.TLabel").pack(side="left")
+        # Levels
+        levels_row = ttk.Frame(param_frame)
+        levels_row.pack(fill="x", pady=2)
+        ttk.Label(levels_row, text="Levels", width=18, anchor="w").pack(side="left")
+        self.levels_var = tk.StringVar(value="20, 10, 0")
+        ttk.Entry(levels_row, textvariable=self.levels_var, width=20).pack(side="left", padx=(4, 8))
+        ttk.Label(levels_row, text="comma-separated", style="Sub.TLabel").pack(side="left")
 
-        snr_info = (
-            "20 dB = barely audible noise  |  "
-            "10 dB = clearly noticeable  |  "
-            "0 dB = equal loudness  |  "
-            "higher = cleaner, lower = noisier"
+        levels_info = (
+            "Noise: SNR in dB (20 = quiet, 10 = noticeable, 0 = equal power)  |  "
+            "Pitch: semitones (1, 2, 3)  |  Lo-Fi: severity 1/2/3"
         )
-        ttk.Label(param_frame, text=snr_info, style="Sub.TLabel").pack(anchor="w", padx=(2, 0), pady=(0, 6))
+        ttk.Label(param_frame, text=levels_info, style="Sub.TLabel").pack(anchor="w", padx=(2, 0), pady=(0, 6))
 
         # Snippet duration
         snip_row = ttk.Frame(param_frame)
@@ -165,7 +165,7 @@ class AugmentGUI(tk.Tk):
         self.log.pack(fill="x", pady=(8, 0))
 
         ttk.Label(progress_frame,
-                  text="Already-augmented files are skipped — safe to re-run with new noise types or SNR levels.",
+                  text="Already-augmented files are skipped — safe to re-run with new sources or levels.",
                   style="Sub.TLabel").pack(anchor="w", pady=(4, 0))
 
         # === Controls ===
@@ -182,29 +182,44 @@ class AugmentGUI(tk.Tk):
         if path:
             var.set(path)
 
-    def _add_noise_entry(self, ns: NoiseSource):
-        if ns.kind == "white":
+    def _add_entry(self, src: AugSource):
+        if src.kind == "white":
             display = "  White Noise  (generated)"
+        elif src.kind == "pitch_shift_up":
+            display = "  Pitch Shift Up"
+        elif src.kind == "pitch_shift_down":
+            display = "  Pitch Shift Down"
+        elif src.kind == "lofi":
+            display = "  Lo-Fi Filter"
         else:
-            display = f"  {ns.name} — {os.path.basename(ns.path)}"
-        self._noise_entries.append((display, ns))
-        self.noise_list.insert(tk.END, display)
+            display = f"  {src.name} — {os.path.basename(src.path)}"
+        self._aug_entries.append((display, src))
+        self.aug_list.insert(tk.END, display)
 
     def _add_white(self):
-        self._add_noise_entry(NoiseSource(name="white_noise", kind="white"))
+        self._add_entry(AugSource(name="white_noise", kind="white"))
+
+    def _add_pitch_up(self):
+        self._add_entry(AugSource(name="pitch_shift_up", kind="pitch_shift_up"))
+
+    def _add_pitch_down(self):
+        self._add_entry(AugSource(name="pitch_shift_down", kind="pitch_shift_down"))
+
+    def _add_lofi(self):
+        self._add_entry(AugSource(name="lofi", kind="lofi"))
 
     def _add_file_noise(self):
         path = filedialog.askopenfilename(filetypes=[("WAV files", "*.wav"), ("All files", "*.*")])
         if path:
             name = os.path.splitext(os.path.basename(path))[0].replace(" ", "_")
-            self._add_noise_entry(NoiseSource(name=name, kind="file", path=path))
+            self._add_entry(AugSource(name=name, kind="file", path=path))
 
-    def _remove_noise(self):
-        sel = self.noise_list.curselection()
+    def _remove_aug(self):
+        sel = self.aug_list.curselection()
         if sel:
             idx = sel[0]
-            self.noise_list.delete(idx)
-            self._noise_entries.pop(idx)
+            self.aug_list.delete(idx)
+            self._aug_entries.pop(idx)
 
     def _log(self, msg):
         self.log.configure(state="normal")
@@ -217,15 +232,14 @@ class AugmentGUI(tk.Tk):
         self.status_var.set("Cancelling...")
 
     def _start(self):
-        # Validate
-        if not self._noise_entries:
-            messagebox.showerror("Error", "Add at least one noise source.")
+        if not self._aug_entries:
+            messagebox.showerror("Error", "Add at least one augmentation source.")
             return
 
         try:
-            snr_levels = [float(x.strip()) for x in self.snr_var.get().split(",")]
+            levels = [float(x.strip()) for x in self.levels_var.get().split(",")]
         except ValueError:
-            messagebox.showerror("Error", "SNR levels must be comma-separated numbers.")
+            messagebox.showerror("Error", "Levels must be comma-separated numbers.")
             return
 
         try:
@@ -248,7 +262,7 @@ class AugmentGUI(tk.Tk):
             messagebox.showerror("Error", "Workers must be an integer.")
             return
 
-        noise_sources = [ns for _, ns in self._noise_entries]
+        sources = [src for _, src in self._aug_entries]
         input_dir = self.input_var.get()
         output_dir = self.output_var.get()
 
@@ -262,8 +276,8 @@ class AugmentGUI(tk.Tk):
         self.cancel_btn.configure(state="normal")
         self.progress["value"] = 0
         self.status_var.set("Starting...")
-        self._log(f"Noise: {', '.join(ns.name for ns in noise_sources)}")
-        self._log(f"SNR levels: {snr_levels}")
+        self._log(f"Sources: {', '.join(src.name for src in sources)}")
+        self._log(f"Levels: {levels}")
 
         def on_progress(completed, total, last_file):
             self.after(0, self._update_progress, completed, total, last_file)
@@ -273,8 +287,8 @@ class AugmentGUI(tk.Tk):
                 count = run_augmentation(
                     input_dir=input_dir,
                     output_dir=output_dir,
-                    noise_sources=noise_sources,
-                    snr_levels=snr_levels,
+                    sources=sources,
+                    levels=levels,
                     snippet_duration=snippet_dur,
                     seed=seed,
                     workers=workers,

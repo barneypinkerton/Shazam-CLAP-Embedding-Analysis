@@ -1,25 +1,27 @@
+# Technical Notes
 
-⏺ Full track on the DB side; 10 s only on the query side. That's how it should work — and matches how real Shazam works.                       
+## Shazam Evaluation Design
 
-- build_gtzan_db.py calls index_folder() (src/index_directory.py:32-60), which runs process_audio_pipeline(filepath) on the whole file (~30 s for GTZAN), extracts peaks from the full spectrogram, and stores every hash → (song_id, offset) row in fingerprints_gtzan.db. So a      
-  single GTZAN track contributes thousands of hashes spanning the whole 30 s.                                                                                                                                                                                                           
-  - evaluate_shazam.py is the only place the 10 s snippet exists. It writes the snippet to a temp WAV, fingerprints it, and queries the DB. The matcher's time-coherence scoring (identify.py:111-118) computes diff = db_offset - snippet_offset for every matched hash and finds the  
-  dominant (song_id, diff) bucket — that diff recovers where in the 30 s original the snippet came from.                                                                                                                                                                                
-                                                                                                                                                                                                                                                                                        
-  This asymmetry is the whole point of the design: indexing is one-time and exhaustive, queries are short and cheap. Indexing only 10 s of each original would discard 2/3 of the reference hashes and break exactly the scenario Shazam is built for (snippet from anywhere in the     
-  song).                                                    
-                                                                                                                                                           
+**Full track in DB, 10 s snippet on the query side** — this matches how Shazam actually works.
 
- python3 Shazam/evaluation/build_gtzan_db.py            # ~minutes, one time
- python3 Shazam/evaluation/evaluate_shazam.py --limit 5  # smoke test
- python3 Shazam/evaluation/evaluate_shazam.py            # full ~8,991 files
+`build_gtzan_db.py` indexes the full 30 s of each GTZAN track: every hash → (song_id, offset) pair spanning the whole file is stored. `evaluate_shazam.py` cuts a random 10 s window from the augmented file and queries the DB. The matcher's time-coherence scoring (`identify.py`) recovers the position by finding the dominant (song_id, diff) bucket, where `diff = db_offset - snippet_offset`.
 
-Why it's still a defensible experiment: your stated goal in the README is comparative — "Shazam-style fingerprinting vs. CLAP embeddings under degradation." As long as both methods are evaluated against the same augmented files, the bias applies equally to both, and relative   
-  claims ("Method A degrades faster than Method B between 10 dB and 0 dB") remain valid. The bias only invalidates absolute claims like "Shazam achieves X% in noisy environments."
-                                                                                                                                                                                                                                                                                        
-  Cheap mitigations if you want to narrow the gap (in rough order of bang-for buck):                                                                                                                                                                                                    
-  - Add an MP3/AAC re-encode pass to the snippet (codec artifacts hit fingerprinting hard) — ffmpeg -i in.wav -b:a 64k out.aac && ffmpeg -i out.aac out.wav
-  - Convolve with a short room IR before mixing noise (one extra scipy.signal.fftconvolve call)                                                                                                                                                                                         
-  - Apply a phone-mic-ish bandpass (e.g. 300 Hz–3.4 kHz lowpass) — your framework table already lists lowpass as a planned transform
-                                                                                                                                                                                                                                                                                        
-  I'd flag the bias explicitly in your final write-up but not change the pipeline unless you want to make absolute-accuracy claims. Want me to add a "Limitations / Bias" subsection under the Shazam Evaluation section in the main README?             
+This asymmetry is the point: indexing is one-time and exhaustive; queries are short and cheap. Indexing only 10 s of each original would discard 2/3 of the reference hashes and break the scenario Shazam is designed for (snippet from anywhere in the song).
+
+## Experimental Bias Note
+
+Because the augmented WAVs are processed offline and the Shazam evaluation uses a clean-audio DB, the setup gives Shazam a slight advantage: no codec artifacts (MP3/AAC re-encoding) and no room impulse response on the snippet. Since both methods are evaluated against the same augmented files, the bias applies equally to both, and relative claims remain valid. Absolute accuracy claims should acknowledge this.
+
+Cheap mitigations if absolute accuracy matters:
+- Add an MP3/AAC re-encode pass to the snippet: `ffmpeg -i in.wav -b:a 64k out.aac && ffmpeg -i out.aac out.wav`
+- Convolve with a short room IR before mixing noise (`scipy.signal.fftconvolve`)
+
+## Key Findings
+
+**Shazam**: ~91% on additive noise at all SNR levels. Drops to 0% on all pitch-shift conditions — a 1-semitone shift destroys every fingerprint hash. Lo-fi filter gives 6–8% (near-failure) because the bandpass removes the high-frequency peaks the fingerprints depend on.
+
+**CLAP General**: Degrades gracefully across both noise and transforms. Exact retrieval: 61–77% Top-1 at 20 dB SNR, 22–33% on pitch shift, 28–60% on lo-fi. Genre classification: 86–92% at 20 dB SNR, 52–62% on pitch shift, 64–80% on lo-fi. The only system with non-zero pitch-shift robustness — a side-effect of broad training rather than pitch-invariant design. High wrong_song_right_genre_rate (38–46%) on transforms confirms semantic retrieval rather than exact matching.
+
+**CLAP Music**: Collapses completely on transforms. Exact retrieval ~0%, genre ~10% (random chance across 10 genres). Cosine similarity falls from ~0.99 on clean audio to ~0.048 on pitch-shifted audio — the embedding lands in an empty region of the space, then predicts "metal" for every query (embedding space collapse, not genuine detection). Fine-tuning on music increased sensitivity to exact tonal features, which is catastrophic when those features are altered.
+
+**Headline**: Shazam and CLAP Music share the same fatal weakness — exact acoustic matching. CLAP General, a generalist model not designed for music retrieval, is the most transform-robust system. Broader training > specialist fine-tuning for robustness to musical transforms.

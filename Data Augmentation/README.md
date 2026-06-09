@@ -2,7 +2,11 @@
 
 ## Overview
 
-A reusable tool for augmenting audio datasets by mixing in noise at configurable signal-to-noise ratios. Available as both a CLI and a GUI. Designed for evaluating audio recognition robustness under degraded conditions.
+A reusable tool for augmenting audio datasets with noise mixing and musical transforms. Available as both a CLI and a GUI. Designed for evaluating audio recognition robustness under degraded conditions.
+
+Supports two categories of augmentation:
+- **Additive noise** — mixes real-world or synthetic noise into the signal at a configurable SNR level.
+- **Musical transforms** — applies pitch shifting or a lo-fi bandpass filter without adding noise.
 
 ## Installation
 
@@ -45,6 +49,8 @@ python augment.py --input <input_dir> --output <output_dir> \
 | `--output` | Yes | Path to write augmented files |
 | `--noise` | Yes | Noise source(s). Repeatable. `white` for generated white noise, or `file:<name>:<path>` for a noise file |
 | `--snr` | Yes | SNR level(s) in dB. Repeatable. e.g. `--snr 20 10 0`. See [SNR reference](#snr-reference) below |
+| `--aug` | Yes (transforms) | Transform type. `pitch_up`, `pitch_down` (semitones via `--levels`), or `lofi` (bandpass severity via `--levels`). Repeatable. |
+| `--levels` | Yes (transforms) | Severity levels for `--aug`. For pitch: semitones e.g. `1 2 3`. For lo-fi: severity `1 2 3`. |
 | `--snippet-duration` | No | Duration in seconds to extract from noise files (default: 30) |
 | `--seed` | No | Random seed for reproducibility |
 | `--workers` | No | Number of parallel workers (default: 4). Controls how many audio files are processed simultaneously using separate CPU cores. Higher values speed up processing on multi-core machines but use more memory. A value of 4 means 4 files are being read, mixed, and written at the same time. |
@@ -80,6 +86,25 @@ python augment.py \
     --snr 30 20 10 5 0
 ```
 
+**Pitch shift (up and down, levels 1–3 semitones):**
+```bash
+python augment.py \
+    --input "/Volumes/Robbie SSD/GTZAN Dataset/Data/genres_original" \
+    --output "/Volumes/Robbie SSD/GTZAN Dataset/Data/genres_augmented" \
+    --aug pitch_up \
+    --aug pitch_down \
+    --levels 1 2 3
+```
+
+**Lo-fi bandpass filter (levels 1–3):**
+```bash
+python augment.py \
+    --input "/Volumes/Robbie SSD/GTZAN Dataset/Data/genres_original" \
+    --output "/Volumes/Robbie SSD/GTZAN Dataset/Data/genres_augmented" \
+    --aug lofi \
+    --levels 1 2 3
+```
+
 ## Output Structure
 
 ```
@@ -101,7 +126,21 @@ genres_augmented/
     ├── 20dB/
     ├── 10dB/
     └── 0dB/
+├── pitch_shift_up/
+│   ├── 1/
+│   ├── 2/
+│   └── 3/
+├── pitch_shift_down/
+│   ├── 1/
+│   ├── 2/
+│   └── 3/
+└── lofi_filter/
+    ├── 1/
+    ├── 2/
+    └── 3/
 ```
+
+For transforms, the folder number is the severity level (semitones for pitch shift, filter preset for lo-fi).
 
 ## SNR Reference
 
@@ -133,6 +172,14 @@ Both the CLI and GUI call into `augment_core.py`, so all signal processing logic
 - White noise: generated fresh per file using NumPy (seeded for reproducibility)
 - Existing files are skipped (safe to re-run with new noise types)
 - Corrupt or unreadable files are skipped with a warning rather than halting the pipeline
+- Pitch shift uses `librosa.effects.pitch_shift`; level N shifts by ±N semitones
+- Lo-fi filter is a 4th-order Butterworth bandpass (`scipy.signal.butter` + `sosfiltfilt`):
+
+| Level | High-pass | Low-pass | Character |
+|---|---|---|---|
+| 1 | 300 Hz | 8000 Hz | Mild — trims sub-bass and air |
+| 2 | 400 Hz | 6000 Hz | Moderate — telephone / laptop speaker |
+| 3 | 500 Hz | 4000 Hz | Severe — AM radio |
 
 ### How SNR Mixing Works
 

@@ -1,6 +1,6 @@
 # Shazam CLAP Embedding Analysis
 
-This repository evaluates how well two CLAP embedding checkpoints preserve music identity and genre under noisy GTZAN audio augmentations.
+This repository evaluates how well two CLAP embedding checkpoints preserve music identity and genre under noisy and transformed GTZAN audio augmentations, including additive noise (white, crowd, street at SNR 0/10/20 dB) and musical transforms (pitch shift ±1/2/3 semitones, lo-fi bandpass filter at three severity levels).
 
 ## What Is Evaluated
 
@@ -9,7 +9,8 @@ The scripts assume an embedding root with this layout:
 ```text
 Data/
   genres_original/{genre}/{track_id}.npy
-  genres_augmented/{noise_type}/{snr}dB/{genre}/{track_id}.npy
+  genres_augmented/{noise_type}/{snr}dB/{genre}/{track_id}.npy        # additive noise
+  genres_augmented/{transform_type}/{level}/{genre}/{track_id}.npy   # pitch shift / lo-fi
 ```
 
 Ground truth is derived from the dataset paths:
@@ -21,9 +22,9 @@ Ground truth is derived from the dataset paths:
 
 The included plots are under `results/`:
 
-- `results/genre_classification/`: train a classifier on clean original embeddings, then test noisy augmented embeddings against the GTZAN folder genre.
-- `results/exact_song_retrieval/`: query noisy augmented embeddings against a clean original-track index and score whether the retrieved clean track has the same `track_id`.
-- `results/data_overview/`: dataset count checks by genre, noise type, and SNR.
+- `results/genre_classification/`: train a classifier on clean original embeddings, then test augmented embeddings (noise and transforms) against the GTZAN folder genre.
+- `results/exact_song_retrieval/`: query augmented embeddings (noise and transforms) against a clean original-track index and score whether the retrieved clean track has the same `track_id`.
+- `results/data_overview/`: dataset count checks by genre, noise type, SNR, and transform severity.
 
 Model labels used in the plots:
 

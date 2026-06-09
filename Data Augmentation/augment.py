@@ -4,38 +4,57 @@
 import argparse
 import sys
 from tqdm import tqdm
-from augment_core import NoiseSource, run_augmentation
+from augment_core import AugSource, run_augmentation
 
 
-def parse_noise(spec: str) -> NoiseSource:
-    """Parse a --noise argument into a NoiseSource."""
+def parse_aug(spec: str) -> AugSource:
+    """Parse a --aug argument into an AugSource."""
     if spec.lower() == "white":
-        return NoiseSource(name="white_noise", kind="white")
+        return AugSource(name="white_noise", kind="white")
+    if spec.lower() == "pitch_up":
+        return AugSource(name="pitch_shift_up", kind="pitch_shift_up")
+    if spec.lower() == "pitch_down":
+        return AugSource(name="pitch_shift_down", kind="pitch_shift_down")
+    if spec.lower() == "lofi":
+        return AugSource(name="lofi", kind="lofi")
     if spec.startswith("file:"):
         parts = spec.split(":", 2)
         if len(parts) != 3:
             raise argparse.ArgumentTypeError(
-                f"File noise must be file:<name>:<path>, got: {spec}"
+                f"File source must be file:<name>:<path>, got: {spec}"
             )
         _, name, path = parts
-        return NoiseSource(name=name, kind="file", path=path)
+        return AugSource(name=name, kind="file", path=path)
     raise argparse.ArgumentTypeError(
-        f"Unknown noise spec: {spec}. Use 'white' or 'file:<name>:<path>'"
+        f"Unknown augmentation spec: {spec}. Use 'white', 'pitch_up', 'pitch_down', 'lofi', "
+        f"or 'file:<name>:<path>'"
     )
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Augment audio datasets with noise at various SNR levels."
+        description="Augment audio datasets with various transformations at configurable levels."
     )
     parser.add_argument("--input", required=True, help="Input audio directory")
     parser.add_argument("--output", required=True, help="Output directory")
-    parser.add_argument("--noise", action="append", required=True,
-                        help="Noise source: 'white' or 'file:<name>:<path>'. Repeatable.")
-    parser.add_argument("--snr", nargs="+", type=float, required=True,
-                        help="SNR levels in dB (e.g. 20 10 0)")
+    parser.add_argument("--aug", action="append", required=True,
+                        help=(
+                            "Augmentation source. Repeatable. Options: "
+                            "'white' (white noise mixed at --levels dB), "
+                            "'pitch_up' (pitch shift up by --levels semitones), "
+                            "'pitch_down' (pitch shift down by --levels semitones), "
+                            "'lofi' (bandpass filter: L1=300–8kHz, L2=400–6kHz, L3=500–4kHz; --levels selects severity 1/2/3), "
+                            "'file:<name>:<path>' (external noise file mixed at --levels dB)."
+                        ))
+    parser.add_argument("--levels", nargs="+", type=float, required=True,
+                        help=(
+                            "Augmentation levels. Meaning depends on --aug type: "
+                            "dB for noise types (e.g. 20 10 0), "
+                            "semitones for pitch shift (e.g. 1 2 3), "
+                            "severity 1/2/3 for lofi."
+                        ))
     parser.add_argument("--snippet-duration", type=float, default=30.0,
-                        help="Seconds to extract from noise files (default: 30)")
+                        help="Seconds to extract from file-based sources (default: 30)")
     parser.add_argument("--seed", type=int, default=None,
                         help="Random seed for reproducibility")
     parser.add_argument("--workers", type=int, default=4,
@@ -43,13 +62,13 @@ def main():
 
     args = parser.parse_args()
 
-    noise_sources = [parse_noise(spec) for spec in args.noise]
+    sources = [parse_aug(spec) for spec in args.aug]
 
-    print(f"Input:    {args.input}")
-    print(f"Output:   {args.output}")
-    print(f"Noise:    {', '.join(ns.name for ns in noise_sources)}")
-    print(f"SNR (dB): {', '.join(str(s) for s in args.snr)}")
-    print(f"Workers:  {args.workers}")
+    print(f"Input:   {args.input}")
+    print(f"Output:  {args.output}")
+    print(f"Sources: {', '.join(src.name for src in sources)}")
+    print(f"Levels:  {', '.join(str(l) for l in args.levels)}")
+    print(f"Workers: {args.workers}")
     print()
 
     pbar = tqdm(total=0, unit="file", dynamic_ncols=True)
@@ -64,8 +83,8 @@ def main():
     count = run_augmentation(
         input_dir=args.input,
         output_dir=args.output,
-        noise_sources=noise_sources,
-        snr_levels=args.snr,
+        sources=sources,
+        levels=args.levels,
         snippet_duration=args.snippet_duration,
         seed=args.seed,
         workers=args.workers,

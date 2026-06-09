@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """Evaluate Shazam-style identification against augmented GTZAN.
 
-Default mode walks `{augmented_root}/{noise_type}/{snr}dB/{genre}/{name}.wav`.
+Default mode walks `{augmented_root}/{aug_type}/{level}dB/{genre}/{name}.wav`.
 Pass `--clean-baseline` to instead walk `{originals_root}/{genre}/{name}.wav`,
-which establishes the no-noise reference accuracy. Clean-baseline rows are
-written with `noise_type="clean"` and `snr_db=999`, and use the same
+which establishes the no-augmentation reference accuracy. Clean-baseline rows are
+written with `aug_type="clean"` and `level=999`, and use the same
 per-filename snippet-start seed as augmented runs so windows align across
 all conditions for the same track.
 
-For every augmented file `{augmented_root}/{noise_type}/{snr}dB/{genre}/{name}.wav`:
+For every augmented file `{augmented_root}/{aug_type}/{level}dB/{genre}/{name}.wav`:
   1. Pick a deterministic random 10s window inside the 30s clip.
      The window position is seeded from the source filename only, so the
-     SAME window is used across every (noise_type, snr) condition for a given
-     track. This isolates the effect of noise from snippet-position luck.
+     SAME window is used across every (aug_type, level) condition for a given
+     track. This isolates the effect of augmentation from snippet-position luck.
   2. Write the snippet to a temp WAV.
   3. Run identify_audio() against fingerprints_gtzan.db, timed with
      time.perf_counter().
@@ -21,7 +21,7 @@ For every augmented file `{augmented_root}/{noise_type}/{snr}dB/{genre}/{name}.w
      is identical to the original).
   5. Append one row to the results CSV.
 
-Resume-safe: rows whose (noise_type, snr_db, genre, filename) tuple is already
+Resume-safe: rows whose (aug_type, level, genre, filename) tuple is already
 present in the CSV are skipped on re-run.
 """
 import argparse
@@ -54,14 +54,14 @@ DEFAULT_SNIPPET_SECONDS = 10.0
 DEFAULT_MASTER_SEED = 20260425
 
 # Sentinel values used when running the clean baseline (no augmentation).
-# snr_db = 999 sorts cleanly to one end of plots; noise_type = "clean" reads
+# level = 999 sorts cleanly to one end of plots; aug_type = "clean" reads
 # naturally in the CSV and notebook.
-CLEAN_NOISE_TYPE = "clean"
-CLEAN_SNR_SENTINEL = 999
+CLEAN_AUG_TYPE = "clean"
+CLEAN_LEVEL_SENTINEL = 999
 
 FIELDNAMES = [
-    "noise_type",
-    "snr_db",
+    "aug_type",
+    "level",
     "genre",
     "filename",
     "ground_truth_name",
@@ -81,7 +81,7 @@ def snippet_start_seconds(filename: str, snippet_seconds: float,
                           total_seconds: float, master_seed: int) -> float:
     """Pick a deterministic random snippet start.
 
-    Seeded from `master_seed` + `filename` only — independent of noise_type/SNR
+    Seeded from `master_seed` + `filename` only — independent of aug_type/level
     so each underlying track uses the same window across every condition.
     """
     seed_str = f"{master_seed}|{filename}"
@@ -107,32 +107,40 @@ def write_snippet_temp(audio: np.ndarray, sr: int, start_s: float,
 
 
 def parse_augmented_path(path: str, augmented_root: str):
-    """Expect `{augmented_root}/{noise_type}/{snr}dB/{genre}/{filename}`."""
+    """Expect `{augmented_root}/{aug_type}/{level_folder}/{genre}/{filename}`.
+
+    level_folder is either "{n}dB" (SNR-based noise, e.g. "20dB") or a plain
+    integer string (transform-based types, e.g. "1" for pitch/lofi).
+    """
     rel = os.path.relpath(path, augmented_root)
     parts = rel.split(os.sep)
     if len(parts) != 4:
         return None
-    noise_type, snr_str, genre, filename = parts
-    if not snr_str.lower().endswith("db"):
-        return None
-    try:
-        snr = int(snr_str[:-2])
-    except ValueError:
-        return None
-    return noise_type, snr, genre, filename
+    aug_type, level_str, genre, filename = parts
+    if level_str.lower().endswith("db"):
+        try:
+            level = int(level_str[:-2])
+        except ValueError:
+            return None
+    else:
+        try:
+            level = int(level_str)
+        except ValueError:
+            return None
+    return aug_type, level, genre, filename
 
 
 def parse_original_path(path: str, originals_root: str):
     """Expect `{originals_root}/{genre}/{filename}` — one level shallower
     than the augmented layout. Returns the same 4-tuple shape as
-    parse_augmented_path, with sentinel noise_type/snr values so downstream
+    parse_augmented_path, with sentinel aug_type/level values so downstream
     code can stay uniform."""
     rel = os.path.relpath(path, originals_root)
     parts = rel.split(os.sep)
     if len(parts) != 2:
         return None
     genre, filename = parts
-    return CLEAN_NOISE_TYPE, CLEAN_SNR_SENTINEL, genre, filename
+    return CLEAN_AUG_TYPE, CLEAN_LEVEL_SENTINEL, genre, filename
 
 
 def collect_wavs(root: str):
@@ -157,7 +165,7 @@ def load_already_done(csv_path: str):
         reader = csv.DictReader(f)
         for row in reader:
             try:
-                seen.add((row["noise_type"], int(row["snr_db"]),
+                seen.add((row["aug_type"], int(row["level"]),
                           row["genre"], row["filename"]))
             except (KeyError, ValueError):
                 continue
@@ -172,8 +180,8 @@ def main():
                    help="Used only with --clean-baseline.")
     p.add_argument("--clean-baseline", action="store_true",
                    help="Evaluate against the clean originals instead of the "
-                        "augmented set. Rows are written with noise_type='clean' "
-                        f"and snr_db={CLEAN_SNR_SENTINEL}. Snippet-start seeding "
+                        "augmented set. Rows are written with aug_type='clean' "
+                        f"and level={CLEAN_LEVEL_SENTINEL}. Snippet-start seeding "
                         "uses the same per-filename hash as augmented runs, so "
                         "each track's clean snippet aligns with its augmented "
                         "counterparts in the same CSV.")
@@ -234,11 +242,11 @@ def main():
             # --- Step 1: parse condition + ground truth from the path ---
             # GTZAN preserves filenames through augmentation, so the augmented
             # filename IS the ground-truth original name. In --clean-baseline
-            # mode noise_type is "clean" and snr is CLEAN_SNR_SENTINEL.
+            # mode aug_type is "clean" and level is CLEAN_LEVEL_SENTINEL.
             parsed = parse_path(filepath)
             if parsed is None:
                 continue
-            noise_type, snr, genre, filename = parsed
+            aug_type, level, genre, filename = parsed
 
             # --- Step 2: read the augmented WAV from disk into memory ---
             try:
@@ -251,8 +259,8 @@ def main():
             total_seconds = len(data) / sr
 
             # --- Step 3: pick the 10s window ---
-            # Deterministic per filename; same window across every noise/SNR
-            # condition for this track, so noise is the only varied factor.
+            # Deterministic per filename; same window across every aug_type/level
+            # condition for this track, so augmentation is the only varied factor.
             start_s = snippet_start_seconds(filename, args.snippet_seconds,
                                             total_seconds, args.master_seed)
 
@@ -286,7 +294,7 @@ def main():
             # `correct`    = did the returned name equal the ground truth.
             if result is None:
                 row = {
-                    "noise_type": noise_type, "snr_db": snr,
+                    "aug_type": aug_type, "level": level,
                     "genre": genre, "filename": filename,
                     "ground_truth_name": filename,
                     "snippet_start_s": round(start_s, 3),
@@ -299,7 +307,7 @@ def main():
             else:
                 correct = "yes" if result["name"] == filename else "no"
                 row = {
-                    "noise_type": noise_type, "snr_db": snr,
+                    "aug_type": aug_type, "level": level,
                     "genre": genre, "filename": filename,
                     "ground_truth_name": filename,
                     "snippet_start_s": round(start_s, 3),
@@ -318,7 +326,7 @@ def main():
             # exactly where we left off.
             writer.writerow(row)
             out_f.flush()
-            print(f"[{idx}/{len(pending)}] {noise_type}/{snr}dB/{genre}/{filename} "
+            print(f"[{idx}/{len(pending)}] {aug_type}/{level}dB/{genre}/{filename} "
                   f"-> identified={row['identified']} correct={row['correct']} "
                   f"elapsed={elapsed:.3f}s")
 

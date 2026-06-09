@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+.AppleDouble
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Claude Code
+.claude/
+
+# Large data — not committed to the repo
+Embeddings/
+*.db
+
+# Evaluation CSVs (generated outputs, large)
+Embedding Evaluations/results/**/*.csv
+Shazam/evaluation/results/*.csv
+
+# PDF exports
+*.pdf
+
+# Secrets / local config
+.env
+*.env
