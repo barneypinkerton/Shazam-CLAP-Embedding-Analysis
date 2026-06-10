@@ -23,7 +23,10 @@ from eval_utils import (
     NOISE_TYPES, TRANSFORM_TYPES,
     EmbeddingItem, safe_label, model_labels,
     list_data, load_matrix, per_genre_bar_chart,
+    apply_style, SNR_PALETTE, LEVEL_PALETTE, MODEL_PALETTE,
 )
+
+apply_style()
 
 
 def parse_args() -> argparse.Namespace:
@@ -132,9 +135,9 @@ def plot_per_genre_by_noise_snr(by_noise_snr_genre: pd.DataFrame, output_dir: Pa
         per_genre_bar_chart(
             data=avg, metric="accuracy",
             level_order=[20, 10, 0],
-            colors={20: "#2ca02c", 10: "#ff7f0e", 0: "#d62728"},
+            colors=SNR_PALETTE,
             legend_labels={20: "20 dB", 10: "10 dB", 0: "0 dB"},
-            title=f"Per-Genre Classification Accuracy By SNR — Noise Augmentations\n{model}",
+            title=f"Per-Genre Classification Accuracy by SNR — Noise Augmentations\n{model}",
             xlabel="Top-1 genre accuracy (%) — averaged across crowd, street & white noise",
             legend_title="SNR",
             output_path=output_dir / f"per_genre_accuracy_by_noise_snr_{safe_label(model)}.png",
@@ -152,9 +155,9 @@ def plot_per_genre_by_transform_level(by_noise_snr_genre: pd.DataFrame, output_d
         per_genre_bar_chart(
             data=avg, metric="accuracy",
             level_order=[1, 2, 3],
-            colors={1: "#2ca02c", 2: "#ff7f0e", 3: "#d62728"},
+            colors=LEVEL_PALETTE,
             legend_labels={1: "Level 1", 2: "Level 2", 3: "Level 3"},
-            title=f"Per-Genre Classification Accuracy By Level — Transform Augmentations\n{model}",
+            title=f"Per-Genre Classification Accuracy by Level — Transform Augmentations\n{model}",
             xlabel="Top-1 genre accuracy (%) — averaged across pitch shift up, pitch shift down & lo-fi",
             legend_title="Severity Level",
             output_path=output_dir / f"per_genre_accuracy_by_transform_level_{safe_label(model)}.png",
@@ -177,58 +180,77 @@ def plot_noise_snr_heatmap(by_noise_snr_genre: pd.DataFrame, output_path: Path) 
     genres = sorted(data["true_genre"].drop_duplicates())
     models = data["model"].drop_duplicates().tolist()
 
-    fig, axes = plt.subplots(len(models), 1, figsize=(11, 4.2 * len(models)), squeeze=False)
+    fig, axes = plt.subplots(len(models), 1, figsize=(13, 5.5 * len(models)), squeeze=False)
     image = None
     for ax, model in zip(axes[:, 0], models):
         pivot = (data[data["model"] == model]
                  .pivot(index="true_genre", columns="condition", values="accuracy")
                  .reindex(index=genres, columns=conditions))
-        image = ax.imshow(pivot.to_numpy(), vmin=0, vmax=1, cmap="viridis")
+        image = ax.imshow(pivot.to_numpy(), vmin=0, vmax=1, cmap="RdYlGn")
         ax.set_aspect("auto")
-        ax.set_title(model)
-        ax.set_yticks(range(len(genres)), labels=genres)
-        ax.set_xticks(range(len(conditions)), labels=conditions, rotation=45, ha="right", fontsize=7)
+        ax.set_title(model, fontsize=12, fontweight="bold")
+        ax.set_yticks(range(len(genres)), labels=genres, fontsize=9)
+        ax.set_xticks(range(len(conditions)), labels=conditions, rotation=40, ha="right", fontsize=8)
+        ax.grid(visible=False)
         for row in range(pivot.shape[0]):
             for col in range(pivot.shape[1]):
                 value = pivot.iat[row, col]
+                color = "white" if (value < 0.3 or value > 0.75) else "black"
                 ax.text(col, row, f"{value:.2f}", ha="center", va="center",
-                        color="black" if value >= 0.65 else "white", fontsize=8)
+                        color=color, fontsize=8, fontweight="bold")
 
-    fig.suptitle("Genre Accuracy Vs GTZAN Folder Genre By Noise Type And SNR", fontsize=16, y=0.98)
-    fig.subplots_adjust(left=0.16, right=0.86, top=0.90, bottom=0.08, hspace=0.50)
+    fig.suptitle("Genre Accuracy by Noise Type and SNR", fontsize=14, fontweight="bold")
     if image is not None:
-        colorbar_axis = fig.add_axes([0.89, 0.16, 0.025, 0.68])
-        fig.colorbar(image, cax=colorbar_axis, label="Accuracy")
-    fig.savefig(output_path, bbox_inches="tight", dpi=180)
+        fig.colorbar(image, ax=axes, fraction=0.015, pad=0.02, label="Accuracy")
+    fig.tight_layout()
+    fig.savefig(output_path, bbox_inches="tight", dpi=150)
     plt.close(fig)
 
 
 def plot_overall_by_aug_type(by_noise_snr: pd.DataFrame, output_dir: Path) -> None:
+    import matplotlib.ticker as mticker
     specs = [
         (by_noise_snr[by_noise_snr["degradation_type"].isin(NOISE_TYPES)],
-         "SNR (dB)", "Overall Genre Accuracy By SNR — Noise Augmentations",
-         "(averaged across crowd, street & white noise)", "overall_accuracy_by_noise_snr.png"),
+         "SNR (dB)",
+         "Overall Genre Accuracy by SNR — Noise Augmentations",
+         "(averaged across crowd, street & white noise)",
+         "overall_accuracy_by_noise_snr.png"),
         (by_noise_snr[by_noise_snr["degradation_type"].isin(TRANSFORM_TYPES)],
-         "Severity Level", "Overall Genre Accuracy By Level — Transform Augmentations",
-         "(averaged across pitch shift up, pitch shift down & lo-fi)", "overall_accuracy_by_transform_level.png"),
+         "Severity Level",
+         "Overall Genre Accuracy by Level — Transform Augmentations",
+         "(averaged across pitch shift up, pitch shift down & lo-fi)",
+         "overall_accuracy_by_transform_level.png"),
     ]
     for data, xlabel, title, subtitle, filename in specs:
         if data.empty:
             continue
         avg = (data.groupby(["model", "degradation_value"], as_index=False)
                .agg(accuracy=("accuracy", "mean")))
-        pivot = avg.pivot(index="degradation_value", columns="model", values="accuracy").sort_index()
+        models = avg["model"].unique().tolist()
+        levels = sorted(avg["degradation_value"].unique())
+        x = np.arange(len(levels))
+        width = 0.75 / max(len(models), 1)
+
         fig, ax = plt.subplots(figsize=(8, 5))
-        pivot.mul(100).plot(kind="bar", ax=ax)
+        for i, (model, color) in enumerate(zip(models, MODEL_PALETTE)):
+            vals = [avg[(avg["model"] == model) & (avg["degradation_value"] == lv)]["accuracy"].mean() * 100
+                    for lv in levels]
+            offset = (i - (len(models) - 1) / 2) * width
+            bars = ax.bar(x + offset, vals, width, label=model, color=color, zorder=3)
+            for bar, val in zip(bars, vals):
+                ax.text(bar.get_x() + bar.get_width() / 2, val + 0.5,
+                        f"{val:.0f}%", ha="center", va="bottom", fontsize=8)
+
         ax.set_title(f"{title}\n{subtitle}")
         ax.set_xlabel(xlabel)
         ax.set_ylabel("Accuracy (%)")
-        ax.set_ylim(0, 105)
+        ax.set_ylim(0, 110)
+        ax.set_xticks(x, labels=[str(lv) for lv in levels])
         ax.tick_params(axis="x", rotation=0)
-        ax.grid(axis="y", alpha=0.25)
+        ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%g%%"))
         ax.legend(title="Embedding Model")
         fig.tight_layout()
-        fig.savefig(output_dir / filename, dpi=180)
+        fig.savefig(output_dir / filename, dpi=150, bbox_inches="tight")
         plt.close(fig)
 
 
@@ -236,33 +258,34 @@ def plot_confusion(confusion: pd.DataFrame, output_path: Path) -> None:
     genres = sorted(set(confusion["true_genre"]) | set(confusion["predicted_genre"]))
     models = confusion["model"].drop_duplicates().tolist()
 
-    fig, axes = plt.subplots(len(models), 1, figsize=(9.5, 4.7 * len(models)), squeeze=False)
+    fig, axes = plt.subplots(len(models), 1, figsize=(10, 7 * len(models)), squeeze=False)
     image = None
     for ax, model in zip(axes[:, 0], models):
         pivot = (confusion[confusion["model"] == model]
                  .pivot(index="true_genre", columns="predicted_genre", values="rate")
                  .reindex(index=genres, columns=genres).fillna(0))
-        image = ax.imshow(pivot.to_numpy(), vmin=0, vmax=1, cmap="magma")
+        image = ax.imshow(pivot.to_numpy(), vmin=0, vmax=1, cmap="Blues")
         ax.set_aspect("auto")
-        ax.set_title(model)
+        ax.set_title(model, fontsize=12, fontweight="bold")
         ax.set_xlabel("Predicted genre")
         ax.set_ylabel("Ground-truth GTZAN genre")
-        ax.set_xticks(range(len(genres)), labels=genres)
-        ax.set_yticks(range(len(genres)), labels=genres)
+        ax.set_xticks(range(len(genres)), labels=genres, fontsize=9)
+        ax.set_yticks(range(len(genres)), labels=genres, fontsize=9)
         ax.tick_params(axis="x", rotation=35)
+        ax.grid(visible=False)
         for row in range(pivot.shape[0]):
             for col in range(pivot.shape[1]):
                 value = pivot.iat[row, col]
-                if value >= 0.05:
+                if value >= 0.03:
+                    color = "white" if value >= 0.6 else "black"
                     ax.text(col, row, f"{value:.2f}", ha="center", va="center",
-                            color="black" if value >= 0.65 else "white", fontsize=8)
+                            color=color, fontsize=9, fontweight="bold")
 
-    fig.suptitle("Genre Classification Confusion Matrix Vs GTZAN Folder Genre", fontsize=16, y=0.98)
-    fig.subplots_adjust(left=0.14, right=0.86, top=0.90, bottom=0.10, hspace=0.55)
+    fig.suptitle("Genre Classification Confusion Matrix", fontsize=14, fontweight="bold")
     if image is not None:
-        colorbar_axis = fig.add_axes([0.89, 0.18, 0.025, 0.64])
-        fig.colorbar(image, cax=colorbar_axis, label="Rate Within True Genre")
-    fig.savefig(output_path, bbox_inches="tight", dpi=180)
+        fig.colorbar(image, ax=axes, fraction=0.02, pad=0.03, label="Rate within true genre")
+    fig.tight_layout()
+    fig.savefig(output_path, bbox_inches="tight", dpi=150)
     plt.close(fig)
 
 

@@ -20,7 +20,10 @@ from eval_utils import (
     NOISE_TYPES, TRANSFORM_TYPES,
     safe_label, model_labels,
     list_data, load_matrix, per_genre_bar_chart,
+    apply_style, SNR_PALETTE, LEVEL_PALETTE, MODEL_PALETTE,
 )
+
+apply_style()
 
 
 def parse_args() -> argparse.Namespace:
@@ -127,9 +130,9 @@ def plot_per_genre_by_noise_snr(by_noise_snr_genre: pd.DataFrame, output_dir: Pa
         per_genre_bar_chart(
             data=avg, metric="top_1_accuracy",
             level_order=[20, 10, 0],
-            colors={20: "#2ca02c", 10: "#ff7f0e", 0: "#d62728"},
+            colors=SNR_PALETTE,
             legend_labels={20: "20 dB", 10: "10 dB", 0: "0 dB"},
-            title=f"Exact Top-1 Retrieval Accuracy By Genre And SNR — Noise Augmentations\n{model}",
+            title=f"Exact Top-1 Retrieval Accuracy by Genre and SNR — Noise Augmentations\n{model}",
             xlabel="Top-1 same-track retrieval accuracy (%) — averaged across crowd, street & white noise",
             legend_title="SNR",
             output_path=output_dir / f"exact_top1_by_genre_noise_snr_{safe_label(model)}.png",
@@ -147,9 +150,9 @@ def plot_per_genre_by_transform_level(by_noise_snr_genre: pd.DataFrame, output_d
         per_genre_bar_chart(
             data=avg, metric="top_1_accuracy",
             level_order=[1, 2, 3],
-            colors={1: "#2ca02c", 2: "#ff7f0e", 3: "#d62728"},
+            colors=LEVEL_PALETTE,
             legend_labels={1: "Level 1", 2: "Level 2", 3: "Level 3"},
-            title=f"Exact Top-1 Retrieval Accuracy By Genre And Level — Transform Augmentations\n{model}",
+            title=f"Exact Top-1 Retrieval Accuracy by Genre and Level — Transform Augmentations\n{model}",
             xlabel="Top-1 same-track retrieval accuracy (%) — averaged across pitch shift up, pitch shift down & lo-fi",
             legend_title="Severity Level",
             output_path=output_dir / f"exact_top1_by_genre_transform_level_{safe_label(model)}.png",
@@ -157,31 +160,49 @@ def plot_per_genre_by_transform_level(by_noise_snr_genre: pd.DataFrame, output_d
 
 
 def plot_overall_by_aug_type(by_noise_snr: pd.DataFrame, output_dir: Path) -> None:
+    import matplotlib.ticker as mticker
     specs = [
         (by_noise_snr[by_noise_snr["degradation_type"].isin(NOISE_TYPES)],
-         "SNR (dB)", "Overall Exact Top-1 Retrieval Accuracy By SNR — Noise Augmentations",
-         "(averaged across crowd, street & white noise)", "overall_exact_top1_by_noise_snr.png"),
+         "SNR (dB)",
+         "Overall Exact Top-1 Retrieval Accuracy by SNR — Noise Augmentations",
+         "(averaged across crowd, street & white noise)",
+         "overall_exact_top1_by_noise_snr.png"),
         (by_noise_snr[by_noise_snr["degradation_type"].isin(TRANSFORM_TYPES)],
-         "Severity Level", "Overall Exact Top-1 Retrieval Accuracy By Level — Transform Augmentations",
-         "(averaged across pitch shift up, pitch shift down & lo-fi)", "overall_exact_top1_by_transform_level.png"),
+         "Severity Level",
+         "Overall Exact Top-1 Retrieval Accuracy by Level — Transform Augmentations",
+         "(averaged across pitch shift up, pitch shift down & lo-fi)",
+         "overall_exact_top1_by_transform_level.png"),
     ]
     for data, xlabel, title, subtitle, filename in specs:
         if data.empty:
             continue
         avg = (data.groupby(["model", "degradation_value"], as_index=False)
-               .agg(top_1_accuracy=("top_1_accuracy", "mean"), top_5_accuracy=("top_5_accuracy", "mean")))
-        pivot = avg.pivot(index="degradation_value", columns="model", values="top_1_accuracy").sort_index()
+               .agg(top_1_accuracy=("top_1_accuracy", "mean")))
+        models = avg["model"].unique().tolist()
+        levels = sorted(avg["degradation_value"].unique())
+        x = np.arange(len(levels))
+        width = 0.75 / max(len(models), 1)
+
         fig, ax = plt.subplots(figsize=(8, 5))
-        pivot.mul(100).plot(kind="bar", ax=ax)
+        for i, (model, color) in enumerate(zip(models, MODEL_PALETTE)):
+            vals = [avg[(avg["model"] == model) & (avg["degradation_value"] == lv)]["top_1_accuracy"].mean() * 100
+                    for lv in levels]
+            offset = (i - (len(models) - 1) / 2) * width
+            bars = ax.bar(x + offset, vals, width, label=model, color=color, zorder=3)
+            for bar, val in zip(bars, vals):
+                ax.text(bar.get_x() + bar.get_width() / 2, val + 0.5,
+                        f"{val:.0f}%", ha="center", va="bottom", fontsize=8)
+
         ax.set_title(f"{title}\n{subtitle}")
         ax.set_xlabel(xlabel)
         ax.set_ylabel("Top-1 Accuracy (%)")
-        ax.set_ylim(0, 105)
+        ax.set_ylim(0, 110)
+        ax.set_xticks(x, labels=[str(lv) for lv in levels])
         ax.tick_params(axis="x", rotation=0)
-        ax.grid(axis="y", alpha=0.25)
+        ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%g%%"))
         ax.legend(title="Embedding Model")
         fig.tight_layout()
-        fig.savefig(output_dir / filename, dpi=180)
+        fig.savefig(output_dir / filename, dpi=150, bbox_inches="tight")
         plt.close(fig)
 
 

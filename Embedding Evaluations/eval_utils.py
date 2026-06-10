@@ -10,6 +10,38 @@ from pathlib import Path
 import numpy as np
 
 
+# ── Consistent visual style (call apply_style() at module level in each script)
+def apply_style() -> None:
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({
+        "figure.dpi": 150,
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "axes.grid": True,
+        "axes.grid.axis": "y",
+        "grid.color": "#e0e0e0",
+        "grid.linewidth": 0.8,
+        "font.family": "sans-serif",
+        "font.size": 11,
+        "axes.titlesize": 13,
+        "axes.titleweight": "bold",
+        "axes.labelsize": 11,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "legend.fontsize": 10,
+        "legend.framealpha": 0.92,
+        "legend.edgecolor": "#cccccc",
+    })
+
+
+# SNR / severity level palettes shared across all CLAP plots
+SNR_PALETTE   = {20: "#27ae60", 10: "#f39c12", 0: "#e74c3c"}
+LEVEL_PALETTE = {1:  "#27ae60",  2: "#f39c12", 3: "#e74c3c"}
+MODEL_PALETTE = ["#2980b9", "#e67e22", "#8e44ad", "#16a085"]  # General, Music, …
+
+
 # Augmentation type sets used by both evaluation scripts.
 NOISE_TYPES = {"crowd_noise", "street_noise", "white_noise"}
 TRANSFORM_TYPES = {"pitch_shift_up", "pitch_shift_down", "lofi_filter", "lofi"}
@@ -139,6 +171,7 @@ def per_genre_bar_chart(
     output_path: Path,
 ) -> None:
     import matplotlib.pyplot as plt
+    import matplotlib.ticker as mticker
 
     pivot = (
         data.pivot(index="true_genre", columns="degradation_value", values=metric)
@@ -156,18 +189,21 @@ def per_genre_bar_chart(
     for lv in level_order:
         values = pivot[lv].to_numpy()
         bars = ax.barh(y + offsets[lv], values * 100, height=bar_height,
-                       color=colors[lv], label=legend_labels[lv])
+                       color=colors[lv], label=legend_labels[lv], zorder=3)
         for bar, value in zip(bars, values):
-            ax.text(min(value * 100 + 0.8, 101), bar.get_y() + bar.get_height() / 2,
-                    f"{value * 100:.0f}%", va="center", ha="left", fontsize=9)
+            if value * 100 >= 2:
+                ax.text(min(value * 100 + 0.8, 101), bar.get_y() + bar.get_height() / 2,
+                        f"{value * 100:.0f}%", va="center", ha="left", fontsize=9)
 
     ax.set_title(title)
     ax.set_xlabel(xlabel)
     ax.set_ylabel("Ground-truth GTZAN genre")
     ax.set_yticks(y, labels=pivot.index)
-    ax.set_xlim(0, 105)
-    ax.grid(axis="x", alpha=0.25)
+    ax.set_xlim(0, 110)
+    ax.xaxis.set_major_formatter(mticker.FormatStrFormatter("%g%%"))
+    ax.grid(axis="x")
+    ax.grid(axis="y", visible=False)
     ax.legend(title=legend_title, loc="lower right")
     fig.tight_layout()
-    fig.savefig(output_path, dpi=180)
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
